@@ -24,6 +24,10 @@
 
 property_pointer (buffer, _("Buffer location"),
                     _("The location where to store the output GeglBuffer"))
+
+property_object (buffer_object, _("Buffer"), GEGL_TYPE_BUFFER)
+    description(_("The output GeglBuffer"))
+
 property_pointer (format, _("babl format"),
                     _("The babl format of the output GeglBuffer, NULL to use input buffer format"))
 
@@ -41,29 +45,28 @@ process (GeglOperation       *operation,
          const GeglRectangle *result,
          gint                 level)
 {
+  GeglBuffer *output = NULL;
   GeglProperties *o = GEGL_PROPERTIES (operation);
 
-  if (o->buffer != NULL &&
-      (o->format == NULL || o->format == gegl_buffer_get_format (input)))
-    {
-      GeglBuffer **output = o->buffer;
+  if (o->format == NULL || o->format == gegl_buffer_get_format (input)) {
+    if (gegl_rectangle_equal (result, gegl_buffer_get_extent (input)))
+      output = g_object_ref (input);
+    else
+      output = gegl_buffer_create_sub_buffer (input, result);
+  }
+  else if (o->format != NULL) {
+    output = gegl_buffer_new (gegl_buffer_get_extent (input),
+                                o->format);
 
-      if (gegl_rectangle_equal (result, gegl_buffer_get_extent (input)))
-        *output = g_object_ref (input);
-      else
-        *output = gegl_buffer_create_sub_buffer (input, result);
-    }
-  else if (o->buffer != NULL &&
-           o->format != NULL)
-    {
-      GeglBuffer **output = o->buffer;
+    gegl_buffer_copy (input, NULL, GEGL_ABYSS_NONE,
+                      output, NULL);
+  }
 
-      *output = gegl_buffer_new (gegl_buffer_get_extent (input),
-                                 o->format);
-
-      gegl_buffer_copy (input, NULL, GEGL_ABYSS_NONE,
-                        *output, NULL);
-    }
+  o->buffer_object = G_OBJECT(output);
+  if (o->buffer != NULL) {
+    GeglBuffer **output_ptr = o->buffer;
+    *output_ptr = output;
+  }
 
   return TRUE;
 }
