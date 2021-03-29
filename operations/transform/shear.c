@@ -15,6 +15,7 @@
  *
  * Copyright 2006 Philip Lafleur
  *           2017 Øyvind Kolås
+ *           2021 John Marshall
  */
 
 #include "config.h"
@@ -29,6 +30,9 @@ property_double (x, _("X"), 0.0)
 property_double (y, _("Y"), 0.0)
     description (_("Vertical shear amount"))
     ui_range (-100.0, 100.0)
+
+property_boolean (x_first, _("X-shear first"), TRUE)
+    description (_("Apply horizontal shear before vertical"))
 
 #else
 
@@ -51,6 +55,10 @@ create_matrix (OpTransform *op,
 
   matrix->coeff [0][1] = o->x;
   matrix->coeff [1][0] = o->y;
+  if (o->x_first)
+    matrix->coeff [1][1] = 1 + (o->x * o->y);
+  else
+    matrix->coeff [0][0] = 1 + (o->x * o->y);
 }
 
 #include <stdio.h>
@@ -60,6 +68,29 @@ gegl_op_class_init (GeglOpClass *klass)
 {
   GeglOperationClass *operation_class;
   OpTransformClass   *transform_class;
+  gchar              *composition =
+    "<?xml version='1.0' encoding='UTF-8'?>"
+    "<gegl>"
+    "  <node operation='gegl:crop' width='200' height='200'/>"
+    "  <node operation='gegl:over'>"
+    "    <node operation='gegl:shear'>"
+    "      <params>"
+    "        <param name='origin-x'>100</param>"
+    "        <param name='origin-y'>100</param>"
+    "        <param name='x'>0.5</param>"
+    "        <param name='y'>0.5</param>"
+    "        <param name='x-first'>false</param>"
+    "      </params>"
+    "    </node>"
+    "    <node operation='gegl:load' path='standard-input.png'/>"
+    "  </node>"
+    "  <node operation='gegl:checkerboard'>"
+    "    <params>"
+    "      <param name='color1'>rgb(0.25,0.25,0.25)</param>"
+    "      <param name='color2'>rgb(0.75,0.75,0.75)</param>"
+    "    </params>"
+    "  </node>"    
+    "</gegl>";
 
   operation_class = GEGL_OPERATION_CLASS (klass);
   transform_class = OP_TRANSFORM_CLASS (klass);
@@ -69,9 +100,9 @@ gegl_op_class_init (GeglOpClass *klass)
     "name", "gegl:shear",
     "title", _("Shear"),
     "categories", "transform",
-    "reference-hash", "3d26408e0d03bb534fe1492453409519",
-    "reference-chain", "load path=images/standard-input.png shear x=1.12 clip-to-input=true origin-x=100 origin-y=100",
-    "description", _("Shears the buffer."),
+    "reference-hash", "3d0601f054b45ec1ccad1f721b7d71c8",
+    "reference-composition", composition,
+    "description", _("Shears the buffer. "),
     NULL);
 }
 
