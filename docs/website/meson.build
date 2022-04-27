@@ -15,18 +15,17 @@ endforeach
 
 # generate website
 # website - class hierarchy reference
-if env.found() and can_run_host_binaries
+if can_run_host_binaries
   custom_target(
     'class_hierarchy_html',
     output: 'class-hierarchy.html',
     command: [
-      env,
-      doc_env,
       introspect,
     ],
     depends: gegl_operations,
     capture: true,
     build_by_default : true,
+    env: doc_env,
   )
 else
   warning('Cannot create class reference in this environment')

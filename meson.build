@@ -3,7 +3,7 @@ project('gegl',
   license: 'GPL3+',
   version: '0.4.37',
   # when meson version passes 0.53.0 remove alternate build summary
-  meson_version: '>=0.50.0',
+  meson_version: '>=0.57.0',
   default_options: [
     'c_std=gnu11',
     'cpp_std=gnu++14',
@@ -230,8 +230,6 @@ add_project_arguments(cpp.get_supported_arguments(cflags_cpp), language: 'cpp')
 
 ################################################################################
 # Build Utilities
-
-env               = find_program('env')
 
 asciidoc          = find_program('asciidoc',
                      required: false, native: true)
