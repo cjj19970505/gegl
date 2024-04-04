@@ -14,6 +14,7 @@
  * License along with GEGL; if not, see <https://www.gnu.org/licenses/>.
  *
  * Copyright 2006, 2010 Øyvind Kolås <pippin@gimp.org>
+ * 2024 Sam Lester (random seed and knock out abilities like my SSG plugin.
  */
 
 #include "config.h"
@@ -22,7 +23,6 @@
 
 #ifdef GEGL_PROPERTIES
 
-/* Should correspond to GeglMedianBlurNeighborhood in median-blur.c */
 enum_start (gegl_dropshadow_grow_shape)
   enum_value (GEGL_DROPSHADOW_GROW_SHAPE_SQUARE,  "square",  N_("Square"))
   enum_value (GEGL_DROPSHADOW_GROW_SHAPE_CIRCLE,  "circle",  N_("Circle"))
@@ -75,6 +75,24 @@ property_double (opacity, _("Opacity"), 0.5)
   value_range   (0.0, 2.0)
   ui_steps      (0.01, 0.10)
 
+property_boolean (enable_knockout, _("Enable Knockout"), FALSE)
+    description (_("Knockout the alpha defined shape fill for an outline only setup"))
+
+
+property_boolean (enable_seed, _("Enable Seed"), FALSE)
+    description (_("Enable a glow seed effect"))
+
+property_double (seed_size, _("Seed Size"),20.0)
+    description (_("Cubism tile size repurposed as a glow seed. This controls the size of the glow seed"))
+    value_range (5.0, 20.0)
+    ui_meta     ("unit", "pixel-distance")
+  ui_meta     ("sensitive", " enable_seed")
+
+
+property_seed (seed, _("Random seed"), rand)
+   description (_("Seed to make a random glow seed effect"))
+  ui_meta     ("sensitive", " enable_seed")
+
 #else
 
 #define GEGL_OP_META
@@ -88,6 +106,17 @@ typedef struct
   GeglNode *input;
   GeglNode *grow;
   GeglNode *darken;
+  GeglNode *blur;
+  GeglNode *opacity;
+  GeglNode *color;
+  GeglNode *translate;
+  GeglNode *over;
+  GeglNode *dstout;
+  GeglNode *cubism;
+  GeglNode *nothing;
+  GeglNode *nothing2;
+  GeglNode *nothing3;
+  GeglNode *output;
 } State;
 
 static void
@@ -96,17 +125,27 @@ update_graph (GeglOperation *operation)
   GeglProperties *o = GEGL_PROPERTIES (operation);
   State *state = o->user_data;
   if (!state) return;
+  GeglNode *xgrow;
+  GeglNode *xcubism;
+  GeglNode *xover;
 
   if (fabs (o->grow_radius) > 0.0001)
-  {
-    gegl_node_link_many (state->input, state->grow, state->darken, NULL);
-  }
+  xgrow = state->grow;
   else
-  {
-    gegl_node_link_many (state->input, state->darken, NULL);
-  }
-}
+  xgrow = state->nothing;
 
+  if (o->enable_seed) xcubism  = state->cubism;
+  if (!o->enable_seed) xcubism  = state->nothing2;
+
+  if (o->enable_knockout) xover  = state->dstout;
+  if (!o->enable_knockout) xover  = state->over;
+
+  gegl_node_link_many (state->input, xgrow,  xcubism, state->darken,  state->blur,  state->opacity, state->translate, xover, state->output,
+                       NULL);
+  gegl_node_connect (xover, "aux", state->input, "output");
+  gegl_node_connect (state->darken, "aux", state->color, "output");
+
+}
 
 /* in attach we hook into graph adding the needed nodes */
 static void
@@ -114,14 +153,14 @@ attach (GeglOperation *operation)
 {
   GeglProperties *o = GEGL_PROPERTIES (operation);
   GeglNode  *gegl = operation->node;
-  GeglNode  *input, *output, *over, *translate, *opacity, *grow, *blur, *darken, *color;
+  GeglNode  *input, *output, /* *over, *translate, *opacity, */ *grow, *blur, *darken, *color;
   GeglColor *black_color = gegl_color_new ("rgb(0.0,0.0,0.0)");
 
   input     = gegl_node_get_input_proxy (gegl, "input");
   output    = gegl_node_get_output_proxy (gegl, "output");
-  over      = gegl_node_new_child (gegl, "operation", "gegl:over", NULL);
+/*  over      = gegl_node_new_child (gegl, "operation", "gegl:over", NULL);
   translate = gegl_node_new_child (gegl, "operation", "gegl:translate", NULL);
-  opacity   = gegl_node_new_child (gegl, "operation", "gegl:opacity", NULL);
+  opacity   = gegl_node_new_child (gegl, "operation", "gegl:opacity", NULL);*/
   blur      = gegl_node_new_child (gegl, "operation", "gegl:gaussian-blur",
                                          "clip-extent", FALSE,
                                          "abyss-policy", 0,
@@ -137,25 +176,38 @@ attach (GeglOperation *operation)
                                    NULL);
   State *state = g_malloc0 (sizeof (State));
   o->user_data = state;
-  state->input = input;
   state->grow = grow;
   state->darken = darken;
+  state->blur = blur;
+  state->color  = color;
+  state->input     = input     = gegl_node_get_input_proxy (gegl, "input");
+  state->output    = output    = gegl_node_get_output_proxy (gegl, "output");
+  state->over  = gegl_node_new_child (gegl, "operation", "gegl:over", NULL);
+  state->translate  = gegl_node_new_child (gegl, "operation", "gegl:translate", NULL);
+  state->dstout  = gegl_node_new_child (gegl, "operation", "gegl:dst-out", NULL);
+  state->cubism    = gegl_node_new_child (gegl, "operation", "gegl:cubism", NULL);
+  state->nothing    = gegl_node_new_child (gegl, "operation", "gegl:nop", NULL);
+  state->nothing2    = gegl_node_new_child (gegl, "operation", "gegl:nop", NULL);
+  state->nothing3    = gegl_node_new_child (gegl, "operation", "gegl:nop", NULL);
+  state->opacity    = gegl_node_new_child (gegl, "operation", "gegl:opacity", NULL);
 
   g_object_unref (black_color);
 
-  gegl_node_link_many (input, grow, darken, blur, opacity, translate, over, output,
+  gegl_node_link_many (input, grow, darken, blur, /*opacity,  translate, over,*/ output,
                        NULL);
-  gegl_node_connect (over, "aux", input, "output");
+/*  gegl_node_connect (over, "aux", input, "output"); */
   gegl_node_connect (darken, "aux", color, "output");
 
   gegl_operation_meta_redirect (operation, "grow-shape", grow, "neighborhood");
   gegl_operation_meta_redirect (operation, "grow-radius", grow, "radius");
   gegl_operation_meta_redirect (operation, "radius", blur, "std-dev-x");
   gegl_operation_meta_redirect (operation, "radius", blur, "std-dev-y");
-  gegl_operation_meta_redirect (operation, "x", translate, "x");
-  gegl_operation_meta_redirect (operation, "y", translate, "y");
+  gegl_operation_meta_redirect (operation, "x", state->translate, "x");
+  gegl_operation_meta_redirect (operation, "y", state->translate, "y");
   gegl_operation_meta_redirect (operation, "color", color, "value");
-  gegl_operation_meta_redirect (operation, "opacity", opacity, "value");
+  gegl_operation_meta_redirect (operation, "opacity", state->opacity, "value");
+  gegl_operation_meta_redirect (operation, "seed_size", state->cubism, "tile-size");
+  gegl_operation_meta_redirect (operation, "seed", state->cubism, "seed");
 }
 
 static void
@@ -176,8 +228,8 @@ gegl_op_class_init (GeglOpClass *klass)
   operation_class->attach      = attach;
   operation_meta_class->update = update_graph;
 
-  object_class               = G_OBJECT_CLASS (klass); 
-  object_class->dispose      = dispose; 
+  object_class               = G_OBJECT_CLASS (klass);
+  object_class->dispose      = dispose;
 
   gegl_operation_class_set_keys (operation_class,
     "name",        "gegl:dropshadow",
@@ -185,7 +237,7 @@ gegl_op_class_init (GeglOpClass *klass)
     "categories",  "light",
     "reference-hash", "1784365a0e801041189309f3a4866b1a",
     "description",
-    _("Creates a dropshadow effect on the input buffer"),
+    _("Creates a dropshadow effect on the input buffer that can also alternatively express itself as an outline or glow"),
     NULL);
 }
 
