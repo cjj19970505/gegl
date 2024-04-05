@@ -22,47 +22,16 @@
 
 
 #ifdef GEGL_PROPERTIES
-enum_start (gradientmaplist)
-enum_value   (SIMPLE_2, "simple", N_("Simple (show 2 colors)"))
-enum_value   (ADVANCE_5, "advance", N_("Advance (show all 5 colors)"))
-  enum_end (gradientmaplisting)
-
-property_enum(show, _("Settings"),
-    gradientmaplisting, gradientmaplist,
-    SIMPLE_2)
-
-
 property_color(color1, _("Color 1"), "black")
 property_double(stop1, _("Stop 1"), 0.0)
-   value_range  (-2.0, 5.0)
-  ui_range      (-2.0, 3.5)
-  ui_steps      (0.5, 1.0)
 property_color(color2, _("Color 2"), "white")
 property_double(stop2, _("Stop 2"), 1.0)
-   value_range  (-2.0, 5.0)
-  ui_range      (-2.0, 3.5)
-  ui_steps      (0.5, 1.0)
 property_color(color3, _("Color 3"), "white")
-ui_meta ("visible", "show {advance}")
 property_double(stop3, _("Stop 3"), 1.0)
-ui_meta ("visible", "show {advance}")
-   value_range  (-2.0, 5.0)
-  ui_range      (-2.0, 3.5)
-  ui_steps      (0.5, 1.0)
 property_color(color4, _("Color 4"), "white")
-ui_meta ("visible", "show {advance}")
 property_double(stop4, _("Stop 4"), 1.0)
-   value_range  (-2.0, 5.0)
-  ui_range      (-2.0, 3.5)
-  ui_steps      (0.5, 1.0)
-ui_meta ("visible", "show {advance}")
 property_color(color5, _("Color 5"), "white")
-ui_meta ("visible", "show {advance}")
 property_double(stop5, _("Stop 5"), 1.0)
-   value_range  (-2.0, 5.0)
-  ui_range      (-2.0, 3.5)
-  ui_steps      (0.5, 1.0)
-ui_meta ("visible", "show {advance}")
 property_boolean(srgb, _("sRGB"), FALSE)
 #else
 
