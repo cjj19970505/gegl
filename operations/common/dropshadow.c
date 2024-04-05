@@ -76,22 +76,8 @@ property_double (opacity, _("Opacity"), 0.5)
   ui_steps      (0.01, 0.10)
 
 property_boolean (enable_knockout, _("Enable Knockout"), FALSE)
-    description (_("Knockout the alpha defined shape fill for an outline only setup"))
+    description (_("Remove the original content while keeping the shadow"))
 
-
-property_boolean (enable_seed, _("Enable Seed"), FALSE)
-    description (_("Enable a glow seed effect"))
-
-property_double (seed_size, _("Seed Size"),20.0)
-    description (_("Cubism tile size repurposed as a glow seed. This controls the size of the glow seed"))
-    value_range (5.0, 20.0)
-    ui_meta     ("unit", "pixel-distance")
-  ui_meta     ("sensitive", " enable_seed")
-
-
-property_seed (seed, _("Random seed"), rand)
-   description (_("Seed to make a random glow seed effect"))
-  ui_meta     ("sensitive", " enable_seed")
 
 #else
 
@@ -112,10 +98,7 @@ typedef struct
   GeglNode *translate;
   GeglNode *over;
   GeglNode *dstout;
-  GeglNode *cubism;
   GeglNode *nothing;
-  GeglNode *nothing2;
-  GeglNode *nothing3;
   GeglNode *output;
 } State;
 
@@ -126,7 +109,6 @@ update_graph (GeglOperation *operation)
   State *state = o->user_data;
   if (!state) return;
   GeglNode *xgrow;
-  GeglNode *xcubism;
   GeglNode *xover;
 
   if (fabs (o->grow_radius) > 0.0001)
@@ -134,13 +116,10 @@ update_graph (GeglOperation *operation)
   else
   xgrow = state->nothing;
 
-  if (o->enable_seed) xcubism  = state->cubism;
-  if (!o->enable_seed) xcubism  = state->nothing2;
-
   if (o->enable_knockout) xover  = state->dstout;
   if (!o->enable_knockout) xover  = state->over;
 
-  gegl_node_link_many (state->input, xgrow,  xcubism, state->darken,  state->blur,  state->opacity, state->translate, xover, state->output,
+  gegl_node_link_many (state->input, xgrow, state->darken,  state->blur,  state->opacity, state->translate, xover, state->output,
                        NULL);
   gegl_node_connect (xover, "aux", state->input, "output");
   gegl_node_connect (state->darken, "aux", state->color, "output");
@@ -185,10 +164,7 @@ attach (GeglOperation *operation)
   state->over  = gegl_node_new_child (gegl, "operation", "gegl:over", NULL);
   state->translate  = gegl_node_new_child (gegl, "operation", "gegl:translate", NULL);
   state->dstout  = gegl_node_new_child (gegl, "operation", "gegl:dst-out", NULL);
-  state->cubism    = gegl_node_new_child (gegl, "operation", "gegl:cubism", NULL);
   state->nothing    = gegl_node_new_child (gegl, "operation", "gegl:nop", NULL);
-  state->nothing2    = gegl_node_new_child (gegl, "operation", "gegl:nop", NULL);
-  state->nothing3    = gegl_node_new_child (gegl, "operation", "gegl:nop", NULL);
   state->opacity    = gegl_node_new_child (gegl, "operation", "gegl:opacity", NULL);
 
   g_object_unref (black_color);
@@ -206,8 +182,6 @@ attach (GeglOperation *operation)
   gegl_operation_meta_redirect (operation, "y", state->translate, "y");
   gegl_operation_meta_redirect (operation, "color", color, "value");
   gegl_operation_meta_redirect (operation, "opacity", state->opacity, "value");
-  gegl_operation_meta_redirect (operation, "seed_size", state->cubism, "tile-size");
-  gegl_operation_meta_redirect (operation, "seed", state->cubism, "seed");
 }
 
 static void
@@ -237,7 +211,7 @@ gegl_op_class_init (GeglOpClass *klass)
     "categories",  "light",
     "reference-hash", "1784365a0e801041189309f3a4866b1a",
     "description",
-    _("Creates a dropshadow effect on the input buffer that can also alternatively express itself as an outline or glow"),
+    _("Creates a dropshadow effect on the input buffer"),
     NULL);
 }
 
