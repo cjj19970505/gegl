@@ -810,13 +810,15 @@ cl_gaussian_blur (cl_mem                 in_tex,
                   cl_mem                 out_tex,
                   const GeglRectangle   *roi,
                   cl_mem                 cl_cmatrix,
+                  gboolean               has_4Channels,
                   gint                   clen,
                   GeglOrientation        orientation)
 {
-  cl_int cl_err = 0;
-  size_t global_ws[2];
-  gint   kernel_num;
-
+  cl_int cl_err         = 0;
+  cl_int n_has_4Channels    = has_4Channels;
+  size_t global_ws[2]   = {roi -> width, roi -> height};
+  gint   kernel_num     = orientation == GEGL_ORIENTATION_VERTICAL ? 0 : 1;
+  
   if (!cl_data)
     {
       const char *kernel_name[] = {"fir_ver_blur", "fir_hor_blur", NULL};
@@ -826,19 +828,12 @@ cl_gaussian_blur (cl_mem                 in_tex,
   if (!cl_data)
     return TRUE;
 
-  if (orientation == GEGL_ORIENTATION_VERTICAL)
-    kernel_num = 0;
-  else
-    kernel_num = 1;
-
-  global_ws[0] = roi->width;
-  global_ws[1] = roi->height;
-
   cl_err = gegl_cl_set_kernel_args (cl_data->kernel[kernel_num],
                                     sizeof(cl_mem), (void*)&in_tex,
                                     sizeof(cl_mem), (void*)&out_tex,
                                     sizeof(cl_mem), (void*)&cl_cmatrix,
                                     sizeof(cl_int), (void*)&clen,
+                                    sizeof(cl_int), (void*)&n_has_4Channels,
                                     NULL);
   CL_CHECK;
 
@@ -861,7 +856,7 @@ static gboolean
 fir_cl_process (GeglBuffer            *input,
                 GeglBuffer            *output,
                 const GeglRectangle   *result,
-                const Babl            *format,
+                gboolean               has_4Channels,
                 gfloat                *cmatrix,
                 gint                   clen,
                 GeglOrientation        orientation,
@@ -873,6 +868,8 @@ fir_cl_process (GeglBuffer            *input,
   GeglBufferClIterator *i;
   gint                  read;
   gint                  left, right, top, bottom;
+  const Babl *in_format  = babl_format ("RaGaBaA float");
+  const Babl *out_format = babl_format ("RaGaBaA float");
 
   if (orientation == GEGL_ORIENTATION_HORIZONTAL)
     {
@@ -887,13 +884,13 @@ fir_cl_process (GeglBuffer            *input,
 
   i = gegl_buffer_cl_iterator_new (output,
                                    result,
-                                   format,
+                                   out_format,
                                    GEGL_CL_BUFFER_WRITE);
 
   read = gegl_buffer_cl_iterator_add_2 (i,
                                         input,
                                         result,
-                                        format,
+                                        in_format,
                                         GEGL_CL_BUFFER_READ,
                                         left, right,
                                         top, bottom,
@@ -910,6 +907,7 @@ fir_cl_process (GeglBuffer            *input,
                              i->tex[0],
                              &i->roi[0],
                              cl_cmatrix,
+                             has_4Channels,
                              clen,
                              orientation);
 
@@ -1260,9 +1258,9 @@ gegl_gblur_1d_process (GeglOperation       *operation,
   GeglProperties *o       = GEGL_PROPERTIES (operation);
   const Babl     *format  = gegl_operation_get_format (operation, "output");
   gfloat          std_dev = o->std_dev;
-
   GeglGblur1dFilter filter;
   GeglAbyssPolicy   abyss_policy = to_gegl_policy (o->abyss_policy);
+  
 
   GeglRectangle rect2;
   if (level)
@@ -1301,15 +1299,16 @@ gegl_gblur_1d_process (GeglOperation       *operation,
     }
   else
     {
-      gfloat *cmatrix;
-      gint    clen;
+      gfloat    *cmatrix;
+      gint       clen = fir_gen_convolve_matrix (std_dev, &cmatrix);
+      gint       nc = babl_format_get_n_components (format);
+      gboolean   has_4Channels = nc == 4;
 
-      clen = fir_gen_convolve_matrix (std_dev, &cmatrix);
-
-      /* FIXME: implement others format cases */
-      if (gegl_operation_use_opencl (operation) &&
-          format == babl_format ("RaGaBaA float"))
-        if (fir_cl_process(input, output, result, format,
+      /* FIXME: implement others format cases 
+        Current implementation runs for channels <= 4
+       */
+      if (gegl_operation_use_opencl (operation) && nc <= 4)
+        if (fir_cl_process(input, output, result, has_4Channels,
                            cmatrix, clen, o->orientation, abyss_policy))
         {
           gegl_free (cmatrix);

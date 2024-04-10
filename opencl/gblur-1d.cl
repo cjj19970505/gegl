@@ -17,10 +17,11 @@
  * Copyright 2013 Téo Mazars      <teomazars@gmail.com>
  */
 
-__kernel void fir_ver_blur(const global float4 *src_buf,
-                                 global float4 *dst_buf,
-                           const global float  *cmatrix,
-                           const        int     clen)
+__kernel void fir_ver_blur (const global float4 *src_buf,
+                                  global float4 *dst_buf,
+                            const global float  *cmatrix,
+                            const        int     clen,
+                            const        int     has_4Channels)
 {
     const int gidx          = get_global_id (0);
     const int gidy          = get_global_id (1);
@@ -37,18 +38,22 @@ __kernel void fir_ver_blur(const global float4 *src_buf,
     float4 v = 0.0f;
 
     for (int i = 0; i < clen; i++)
-      {
-        v += src_buf[src_start_ind + i * src_rowstride] * cmatrix[i];
-      }
+    {
+      v += src_buf[src_start_ind + i * src_rowstride] * cmatrix[i];
+    }
+
+    if(!has_4Channels)
+      v.w = 1.0f;
 
     dst_buf[dst_offset] = v;
 }
 
 
-__kernel void fir_hor_blur(const global float4 *src_buf,
-                                 global float4 *dst_buf,
-                           const global float  *cmatrix,
-                           const        int     clen)
+__kernel void fir_hor_blur (const global float4 *src_buf,
+                                  global float4 *dst_buf,
+                            const global float  *cmatrix,
+                            const        int     clen,
+                            const        int     has_4Channels)
 {
     const int gidx          = get_global_id (0);
     const int gidy          = get_global_id (1);
@@ -65,9 +70,12 @@ __kernel void fir_hor_blur(const global float4 *src_buf,
     float4 v = 0.0f;
 
     for (int i = 0; i < clen; i++)
-      {
-        v += src_buf[src_start_ind + i] * cmatrix[i];
-      }
+    {
+      v += src_buf[src_start_ind + i] * cmatrix[i];
+    }
+
+    if(!has_4Channels)
+      v.w = 1.0f;
 
     dst_buf[dst_offset] = v;
 }
