@@ -1255,11 +1255,11 @@ gegl_gblur_1d_process (GeglOperation       *operation,
                        const GeglRectangle *result,
                        gint                 level)
 {
-  GeglProperties *o       = GEGL_PROPERTIES (operation);
-  const Babl     *format  = gegl_operation_get_format (operation, "output");
-  gfloat          std_dev = o->std_dev;
-  GeglGblur1dFilter filter;
-  GeglAbyssPolicy   abyss_policy = to_gegl_policy (o->abyss_policy);
+  GeglProperties    *o       = GEGL_PROPERTIES (operation);
+  const Babl        *format  = gegl_operation_get_format (operation, "output");
+  gfloat             std_dev = o->std_dev;
+  GeglGblur1dFilter  filter;
+  GeglAbyssPolicy    abyss_policy = to_gegl_policy (o->abyss_policy);
   
 
   GeglRectangle rect2;
@@ -1299,10 +1299,10 @@ gegl_gblur_1d_process (GeglOperation       *operation,
     }
   else
     {
-      gfloat    *cmatrix;
-      gint       clen = fir_gen_convolve_matrix (std_dev, &cmatrix);
-      gint       nc = babl_format_get_n_components (format);
-      gboolean   has_4Channels = nc == 4;
+      gfloat     *cmatrix;
+      gint        clen          = fir_gen_convolve_matrix (std_dev, &cmatrix);
+      gint        nc            = babl_format_get_n_components (format);
+      gboolean    has_4Channels = nc == 4;
 
       /* FIXME: implement others format cases 
         Current implementation runs for channels <= 4
@@ -1310,11 +1310,10 @@ gegl_gblur_1d_process (GeglOperation       *operation,
       if (gegl_operation_use_opencl (operation) && nc <= 4)
         if (fir_cl_process(input, output, result, has_4Channels,
                            cmatrix, clen, o->orientation, abyss_policy))
-        {
-          gegl_free (cmatrix);
-          return TRUE;
-        }
-
+          {
+            gegl_free (cmatrix);
+            return TRUE;
+          }
       if (o->orientation == GEGL_ORIENTATION_HORIZONTAL)
         fir_hor_blur (input, result, output, cmatrix, clen, abyss_policy, format, level);
       else

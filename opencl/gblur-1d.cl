@@ -38,9 +38,9 @@ __kernel void fir_ver_blur (const global float4 *src_buf,
     float4 v = 0.0f;
 
     for (int i = 0; i < clen; i++)
-    {
-      v += src_buf[src_start_ind + i * src_rowstride] * cmatrix[i];
-    }
+      {
+        v += src_buf[src_start_ind + i * src_rowstride] * cmatrix[i];
+      }
 
     if(!has_4Channels)
       v.w = 1.0f;
@@ -70,9 +70,9 @@ __kernel void fir_hor_blur (const global float4 *src_buf,
     float4 v = 0.0f;
 
     for (int i = 0; i < clen; i++)
-    {
-      v += src_buf[src_start_ind + i] * cmatrix[i];
-    }
+      {
+        v += src_buf[src_start_ind + i] * cmatrix[i];
+      }
 
     if(!has_4Channels)
       v.w = 1.0f;
