@@ -23,6 +23,7 @@
  *       becomes very inaccurate.
  */
 
+#include "gegl-debug.h"
 #include "config.h"
 #include <glib/gi18n-lib.h>
 
@@ -810,18 +811,33 @@ cl_gaussian_blur (cl_mem                 in_tex,
                   cl_mem                 out_tex,
                   const GeglRectangle   *roi,
                   cl_mem                 cl_cmatrix,
-                  gboolean               has_4Channels,
+                  gint                   nc,
                   gint                   clen,
                   GeglOrientation        orientation)
 {
   cl_int cl_err         = 0;
-  cl_int n_has_4Channels    = has_4Channels;
   size_t global_ws[2]   = {roi -> width, roi -> height};
   gint   kernel_num     = orientation == GEGL_ORIENTATION_VERTICAL ? 0 : 1;
-  
+
+  if(orientation == GEGL_ORIENTATION_VERTICAL) 
+    {
+      if (nc == 1)
+        kernel_num = 0;
+      else if (nc == 4)
+        kernel_num = 2;
+    } 
+  else 
+    {
+      if (nc == 1)
+        kernel_num = 1;
+      else if (nc == 4)
+        kernel_num = 3;
+    }
+
   if (!cl_data)
     {
-      const char *kernel_name[] = {"fir_ver_blur", "fir_hor_blur", NULL};
+      const char *kernel_name[] = {"fir_ver_blur", "fir_hor_blur",
+                                   "fir_ver_blur4", "fir_hor_blur4", NULL};
       cl_data = gegl_cl_compile_and_build (gblur_1d_cl_source, kernel_name);
     }
 
@@ -833,7 +849,6 @@ cl_gaussian_blur (cl_mem                 in_tex,
                                     sizeof(cl_mem), (void*)&out_tex,
                                     sizeof(cl_mem), (void*)&cl_cmatrix,
                                     sizeof(cl_int), (void*)&clen,
-                                    sizeof(cl_int), (void*)&n_has_4Channels,
                                     NULL);
   CL_CHECK;
 
@@ -841,9 +856,6 @@ cl_gaussian_blur (cl_mem                 in_tex,
                                         cl_data->kernel[kernel_num], 2,
                                         NULL, global_ws, NULL,
                                         0, NULL, NULL);
-  CL_CHECK;
-
-  cl_err = gegl_clFinish (gegl_cl_get_command_queue ());
   CL_CHECK;
 
   return FALSE;
@@ -856,7 +868,8 @@ static gboolean
 fir_cl_process (GeglBuffer            *input,
                 GeglBuffer            *output,
                 const GeglRectangle   *result,
-                gboolean               has_4Channels,
+                const Babl            *format,
+                gint                   nc,
                 gfloat                *cmatrix,
                 gint                   clen,
                 GeglOrientation        orientation,
@@ -868,8 +881,6 @@ fir_cl_process (GeglBuffer            *input,
   GeglBufferClIterator *i;
   gint                  read;
   gint                  left, right, top, bottom;
-  const Babl *in_format  = babl_format ("RaGaBaA float");
-  const Babl *out_format = babl_format ("RaGaBaA float");
 
   if (orientation == GEGL_ORIENTATION_HORIZONTAL)
     {
@@ -884,13 +895,13 @@ fir_cl_process (GeglBuffer            *input,
 
   i = gegl_buffer_cl_iterator_new (output,
                                    result,
-                                   out_format,
+                                   format,
                                    GEGL_CL_BUFFER_WRITE);
 
   read = gegl_buffer_cl_iterator_add_2 (i,
                                         input,
                                         result,
-                                        in_format,
+                                        format,
                                         GEGL_CL_BUFFER_READ,
                                         left, right,
                                         top, bottom,
@@ -907,7 +918,7 @@ fir_cl_process (GeglBuffer            *input,
                              i->tex[0],
                              &i->roi[0],
                              cl_cmatrix,
-                             has_4Channels,
+                             nc,
                              clen,
                              orientation);
 
@@ -1255,13 +1266,16 @@ gegl_gblur_1d_process (GeglOperation       *operation,
                        const GeglRectangle *result,
                        gint                 level)
 {
-  GeglProperties    *o       = GEGL_PROPERTIES (operation);
-  const Babl        *format  = gegl_operation_get_format (operation, "output");
-  gfloat             std_dev = o->std_dev;
-  GeglGblur1dFilter  filter;
+  GeglProperties    *o            = GEGL_PROPERTIES (operation);
+  const Babl        *in_format    = gegl_operation_get_format (operation, "input");
+  const Babl        *out_format   = gegl_operation_get_format (operation, "output");
+  const Babl        *src_format   = gegl_operation_get_source_format (operation, "input");
+  const Babl        *space        = gegl_operation_get_source_space (operation, "input");
+  const char        *format       = "";
+  gfloat             std_dev      = o->std_dev;
   GeglAbyssPolicy    abyss_policy = to_gegl_policy (o->abyss_policy);
+  GeglGblur1dFilter  filter;
   
-
   GeglRectangle rect2;
   if (level)
   {
@@ -1293,31 +1307,81 @@ gegl_gblur_1d_process (GeglOperation       *operation,
       iir_young_find_constants (std_dev, b, m);
 
       if (o->orientation == GEGL_ORIENTATION_HORIZONTAL)
-        iir_young_hor_blur (real_blur_1D, input, result, output, b, m, abyss_policy, format, level);
+        iir_young_hor_blur (real_blur_1D, input, result, output, b, m, abyss_policy, out_format, level);
       else
-        iir_young_ver_blur (real_blur_1D, input, result, output, b, m, abyss_policy, format, level);
+        iir_young_ver_blur (real_blur_1D, input, result, output, b, m, abyss_policy, out_format, level);
     }
   else
     {
       gfloat     *cmatrix;
-      gint        clen          = fir_gen_convolve_matrix (std_dev, &cmatrix);
-      gint        nc            = babl_format_get_n_components (format);
-      gboolean    has_4Channels = nc == 4;
+      gint        nc          = 0;
+      gint        clen        = fir_gen_convolve_matrix (std_dev, &cmatrix);
+      gboolean    isSupported = FALSE;
+      
 
+      if (in_format)
+      {
+        const Babl *model = babl_format_get_model (in_format);
+        if (babl_model_is (model, "RGB") ||
+            babl_model_is (model, "R'G'B'"))
+          {
+            format = "RGBA float";
+            isSupported = TRUE;
+          }
+        else if (babl_model_is (model, "RGBA") || 
+                 babl_model_is (model, "R'G'B'A"))
+          {
+            format = "RGBA float";
+            isSupported = TRUE;
+          }
+        else if (babl_model_is (model, "Y") || 
+                 babl_model_is (model, "Y'"))
+          {
+            format = "Y float";
+            isSupported = TRUE;
+          }
+        else if (babl_model_is (model, "YA") || 
+                 babl_model_is (model, "Y'A"))
+          {
+            format = "RGBA float";
+            isSupported = TRUE;
+          }
+        else if (babl_model_is (model, "RaGaBaA"))
+          {
+            format = "RaGaBaA float";
+            isSupported = TRUE;
+          }
+        else if (babl_model_is (model, "cmyk"))
+          {
+            format = "cmyk float";
+            isSupported = TRUE;
+          }
+        else if (babl_model_is (model, "CMYK"))
+          {
+            format = "CMYK float";
+            isSupported = TRUE;
+          }
+        GEGL_NOTE (GEGL_DEBUG_OPENCL, "Format: %s | Source Format: %s INF: %s OUTF: %s", format, babl_get_name (src_format), babl_get_name (in_format), babl_get_name (out_format));
+      }
+      if(isSupported)
+        {
+          nc = babl_format_get_n_components (babl_format_with_space (format, space));
+          isSupported = (nc == 4) || (nc == 1);
+        }
       /* FIXME: implement others format cases 
-        Current implementation runs for channels <= 4
+        Current implementation works for Y, Y', RGB, RGBA, *RaGaBaA
        */
-      if (gegl_operation_use_opencl (operation) && nc <= 4)
-        if (fir_cl_process(input, output, result, has_4Channels,
-                           cmatrix, clen, o->orientation, abyss_policy))
+      if (gegl_operation_use_opencl (operation) && isSupported)
+        if (fir_cl_process(input, output, result, babl_format_with_space (format, space), 
+                           nc, cmatrix, clen, o->orientation, abyss_policy))
           {
             gegl_free (cmatrix);
             return TRUE;
           }
       if (o->orientation == GEGL_ORIENTATION_HORIZONTAL)
-        fir_hor_blur (input, result, output, cmatrix, clen, abyss_policy, format, level);
+        fir_hor_blur (input, result, output, cmatrix, clen, abyss_policy, out_format, level);
       else
-        fir_ver_blur (input, result, output, cmatrix, clen, abyss_policy, format, level);
+        fir_ver_blur (input, result, output, cmatrix, clen, abyss_policy, out_format, level);
 
       gegl_free (cmatrix);
     }
