@@ -17,13 +17,16 @@
  * Copyright 2013 Téo Mazars      <teomazars@gmail.com>
  */
 
-/* Need to investigate why generic kernel doesn't work for any 
-   number of channels
+/* Defines Max possible channels. 
+   This defines the maximum number of components supported per pixel.
 */
+#define MAX_CHANNELS 5
+
 __kernel void fir_ver_blur (const global float *src_buf,
                                   global float *dst_buf,
                             const global float *cmatrix,
-                            const        int     clen)
+                            const        int    clen,
+                            const        int    nc)
 {
     const int gidx          = get_global_id (0);
     const int gidy          = get_global_id (1);
@@ -32,23 +35,26 @@ __kernel void fir_ver_blur (const global float *src_buf,
 
     const int half_clen     = clen / 2;
 
-    const int src_offset    = gidx + (gidy + half_clen) * src_rowstride;
-    const int dst_offset    = gidx +  gidy              * dst_rowstride;
+    const int src_offset    = (gidx + (gidy + half_clen) * src_rowstride) * nc;
+    const int dst_offset    = (gidx +  gidy              * dst_rowstride) * nc;
 
-    const int src_start_ind = src_offset - half_clen * src_rowstride;
+    const int src_start_ind = src_offset - half_clen * src_rowstride * nc;
 
-    float v = 0.0f;
+    float v[MAX_CHANNELS] = {0.0f};
 
     for (int i = 0; i < clen; i++)
-      v += src_buf[src_start_ind + i * src_rowstride] * cmatrix[i];
+      for(int comp = 0; comp < nc; comp++)
+        v[comp] += src_buf[src_start_ind + i * src_rowstride * nc + comp] * cmatrix[i];
 
-    dst_buf[dst_offset] = v;
+    for(int comp = 0; comp < nc; comp++)
+      dst_buf[dst_offset + comp] = v[comp];
 }
 
 __kernel void fir_hor_blur (const global float *src_buf,
                                   global float *dst_buf,
                             const global float *cmatrix,
-                            const        int    clen)
+                            const        int    clen,
+                            const        int    nc)
 { 
     const int gidx          = get_global_id (0);
     const int gidy          = get_global_id (1);
@@ -57,17 +63,19 @@ __kernel void fir_hor_blur (const global float *src_buf,
 
     const int half_clen     = clen / 2;
 
-    const int src_offset    = gidx + gidy * src_rowstride + half_clen;
-    const int dst_offset    = gidx + gidy * dst_rowstride;
+    const int src_offset    = (gidx + gidy * src_rowstride + half_clen) * nc;
+    const int dst_offset    = (gidx + gidy * dst_rowstride) * nc;
 
-    const int src_start_ind = src_offset - half_clen;
+    const int src_start_ind = src_offset - half_clen * nc;
 
-    float v = 0.0f;
+    float v[MAX_CHANNELS] = {0.0f};
 
     for (int i = 0; i < clen; i++)
-      v += src_buf[(src_start_ind + i)] * cmatrix[i];
+      for(int comp = 0; comp < nc; comp++)
+        v[comp] += src_buf[(src_start_ind + i * nc + comp)] * cmatrix[i];
 
-    dst_buf[dst_offset] = v;
+    for(int comp = 0; comp < nc; comp++)
+      dst_buf[dst_offset + comp] = v[comp];
 }
 
 __kernel void fir_ver_blur4 (const global float4 *src_buf,

@@ -815,23 +815,23 @@ cl_gaussian_blur (cl_mem                 in_tex,
                   gint                   clen,
                   GeglOrientation        orientation)
 {
+  gint   kernel_num;
   cl_int cl_err         = 0;
   size_t global_ws[2]   = {roi -> width, roi -> height};
-  gint   kernel_num     = orientation == GEGL_ORIENTATION_VERTICAL ? 0 : 1;
-
+  
   if(orientation == GEGL_ORIENTATION_VERTICAL) 
     {
-      if (nc == 1)
-        kernel_num = 0;
-      else if (nc == 4)
+      if (nc == 4)
         kernel_num = 2;
+      else
+        kernel_num = 0;
     } 
   else 
-    {
-      if (nc == 1)
-        kernel_num = 1;
-      else if (nc == 4)
+    { 
+      if (nc == 4)
         kernel_num = 3;
+      else
+        kernel_num = 1;
     }
 
   if (!cl_data)
@@ -851,6 +851,9 @@ cl_gaussian_blur (cl_mem                 in_tex,
                                     sizeof(cl_int), (void*)&clen,
                                     NULL);
   CL_CHECK;
+
+  if(nc != 4)
+    cl_err = gegl_clSetKernelArg (cl_data->kernel[kernel_num], 4, sizeof(cl_int), (void*)&nc);
 
   cl_err = gegl_clEnqueueNDRangeKernel (gegl_cl_get_command_queue (),
                                         cl_data->kernel[kernel_num], 2,
@@ -1269,9 +1272,7 @@ gegl_gblur_1d_process (GeglOperation       *operation,
   GeglProperties    *o            = GEGL_PROPERTIES (operation);
   const Babl        *in_format    = gegl_operation_get_format (operation, "input");
   const Babl        *out_format   = gegl_operation_get_format (operation, "output");
-  const Babl        *src_format   = gegl_operation_get_source_format (operation, "input");
   const Babl        *space        = gegl_operation_get_source_space (operation, "input");
-  const char        *format       = "";
   gfloat             std_dev      = o->std_dev;
   GeglAbyssPolicy    abyss_policy = to_gegl_policy (o->abyss_policy);
   GeglGblur1dFilter  filter;
@@ -1314,70 +1315,93 @@ gegl_gblur_1d_process (GeglOperation       *operation,
   else
     {
       gfloat     *cmatrix;
-      gint        nc          = 0;
       gint        clen        = fir_gen_convolve_matrix (std_dev, &cmatrix);
-      gboolean    isSupported = FALSE;
-      
 
-      if (in_format)
-      {
-        const Babl *model = babl_format_get_model (in_format);
-        if (babl_model_is (model, "RGB") ||
-            babl_model_is (model, "R'G'B'"))
-          {
-            format = "RGBA float";
-            isSupported = TRUE;
-          }
-        else if (babl_model_is (model, "RGBA") || 
-                 babl_model_is (model, "R'G'B'A"))
-          {
-            format = "RGBA float";
-            isSupported = TRUE;
-          }
-        else if (babl_model_is (model, "Y") || 
-                 babl_model_is (model, "Y'"))
-          {
-            format = "Y float";
-            isSupported = TRUE;
-          }
-        else if (babl_model_is (model, "YA") || 
-                 babl_model_is (model, "Y'A"))
-          {
-            format = "RGBA float";
-            isSupported = TRUE;
-          }
-        else if (babl_model_is (model, "RaGaBaA"))
-          {
-            format = "RaGaBaA float";
-            isSupported = TRUE;
-          }
-        else if (babl_model_is (model, "cmyk"))
-          {
-            format = "cmyk float";
-            isSupported = TRUE;
-          }
-        else if (babl_model_is (model, "CMYK"))
-          {
-            format = "CMYK float";
-            isSupported = TRUE;
-          }
-        GEGL_NOTE (GEGL_DEBUG_OPENCL, "Format: %s | Source Format: %s INF: %s OUTF: %s", format, babl_get_name (src_format), babl_get_name (in_format), babl_get_name (out_format));
-      }
-      if(isSupported)
+      /* INSTRUCTIONS: To implement other format cases 
+         The general kernel should run for any format, to add support to other formats,
+         add an if statement to the below if else if block and change the format variable
+         to {format} float.
+      */
+      if (gegl_operation_use_opencl (operation))
         {
-          nc = babl_format_get_n_components (babl_format_with_space (format, space));
-          isSupported = (nc == 4) || (nc == 1);
+          const char  *format       = "";
+          gboolean     isSupported = FALSE;
+          gint         nc;
+      
+          if (in_format)
+            {
+              const Babl *model = babl_format_get_model (in_format);
+              if (babl_model_is (model, "RGB") ||
+                  babl_model_is (model, "R'G'B'"))
+                {
+                  format = "RGBA float"; 
+                  // Changing to RGBA allows for float4.
+                  isSupported = TRUE;
+                }
+              else if (babl_model_is (model, "RGBA") || 
+                      babl_model_is (model, "R'G'B'A"))
+                {
+                  format = "RGBA float";
+                  isSupported = TRUE;
+                }
+              else if (babl_model_is (model, "RaGaBaA") ||
+                       babl_model_is (model, "R'aG'aB'aA"))
+                {
+                  format = "RaGaBaA float";
+                  isSupported = TRUE;
+                }
+              else if (babl_model_is (model, "Y") || 
+                       babl_model_is (model, "Y'"))
+                {
+                  format = "Y float";
+                  isSupported = TRUE;
+                }
+              else if (babl_model_is (model, "YA") || 
+                       babl_model_is (model, "Y'A"))
+                {
+                  format = "YA float";
+                  isSupported = TRUE;
+                }
+              else if (babl_model_is (model, "YaA") ||
+                       babl_model_is (model, "Y'aA"))
+                {
+                  format = "YaA float";
+                  isSupported = TRUE;
+                }  
+              else if (babl_model_is (model, "cmyk"))
+                {
+                  format = "cmyk float";
+                  isSupported = TRUE;
+                }
+              else if (babl_model_is (model, "CMYK"))
+                {
+                  format = "CMYK float";
+                  isSupported = TRUE;;
+                }
+              else if (babl_model_is (model, "cmykA") ||
+                       babl_model_is (model, "camayakaA") ||
+                       babl_model_is (model, "CMYKA") ||
+                       babl_model_is (model, "CaMaYaKaA"))
+                {
+                  format = "camayakaA float";
+                  isSupported = TRUE;
+                }
+            }
+            if(isSupported)
+              {
+                nc = babl_format_get_n_components (babl_format_with_space (format, space));
+                isSupported = nc <= 5;
+                // Modify MAX_CHANNELS in gblur-1d.cl to add support for more than 5.
+              }
+
+          if (isSupported && fir_cl_process(input, output, result, babl_format_with_space (format, space), 
+                            nc, cmatrix, clen, o->orientation, abyss_policy))
+            {
+              gegl_free (cmatrix);
+              return TRUE;
+            }
         }
-      /* FIXME: implement others format cases 
-        Current implementation works for Y, Y', RGB, RGBA, *RaGaBaA
-       */
-      if (gegl_operation_use_opencl (operation) && isSupported)
-        if (fir_cl_process(input, output, result, babl_format_with_space (format, space), 
-                           nc, cmatrix, clen, o->orientation, abyss_policy))
-          {
-            gegl_free (cmatrix);
-            return TRUE;
-          }
+
       if (o->orientation == GEGL_ORIENTATION_HORIZONTAL)
         fir_hor_blur (input, result, output, cmatrix, clen, abyss_policy, out_format, level);
       else
