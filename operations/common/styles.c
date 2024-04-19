@@ -24,6 +24,9 @@ I hope Gimp's team is not overwhelmed by my complexity because this is the first
 #include <glib/gi18n-lib.h>
 
 #ifdef GEGL_PROPERTIES
+
+
+
 /* This is an ENUM list that divides GEGL Styles into three parts*/
 enum_start (partoffiltertobedisplayed)
 enum_value   (GEGL_UI_OUTLINESHADOW, "outlineshadow", N_("Color, Outline and Shadow"))
@@ -46,6 +49,13 @@ property_color  (color_fill, _("Color overlay"), "#ffffff")
   ui_meta ("visible", "guichange {outlineshadow}")
     description (_("Color overlay setting"))
 
+
+property_double(color_opacity, _("Color Opacity"), 1.0)
+    value_range (0.0, 1.0)
+  description (_("Opacity of the color overlay"))
+  ui_meta ("visible", "guichange {outlineshadow}")
+
+
 property_enum (color_policy, _("Color policy"),
     description (_("Change the blend mode of the color overlay"))
     GeglBlendColorOverlay, gegl_blend_color_overlay,
@@ -55,10 +65,18 @@ property_enum (color_policy, _("Color policy"),
 enum_start (gegl_blend_color_overlay)
   enum_value (GEGL_BLEND_MODE_TYPE_NO_COLOR,      "nocolor",
               N_("No Color"))
-  enum_value (GEGL_BLEND_MODE_TYPE_MULTIPLY_COLOR,      "multiply",
-              N_("Multiply"))
   enum_value (GEGL_BLEND_MODE_TYPE_SOLID_COLOR,      "solidcolor",
               N_("Solid Color"))
+  enum_value (GEGL_BLEND_MODE_TYPE_MULTIPLY_COLOR,      "multiply",
+              N_("Multiply"))
+  enum_value (GEGL_BLEND_MODE_TYPE_HARDLIGHT_COLOR,      "hardlight",
+              N_("Hard Light"))
+  enum_value (GEGL_BLEND_MODE_TYPE_ADD_COLOR,      "add",
+              N_("Add"))
+  enum_value (GEGL_BLEND_MODE_TYPE_LIGHTEN_COLOR,      "lighten",
+              N_("Lighten"))
+  enum_value (GEGL_BLEND_MODE_TYPE_DARKEN_COLOR,      "darken",
+              N_("Darken"))
 enum_end (GeglBlendColorOverlay)
 
 
@@ -229,7 +247,7 @@ property_enum (bevel_type, _("Select Bevel"),
 
 
 
-property_int (bevel_depth, _("Bevel depth"), 100)
+property_int (bevel_depth, _("Bevel depth"), 55)
     description (_("Emboss depth for the bevel"))
     value_range (1, 100)
   ui_meta ("visible", "guichange {innerglowbevel}")
@@ -253,8 +271,8 @@ property_double (bevel_azimuth, _("Bevel azimuth"), 75.0)
 
 
 property_double (bevel_radius, _("Bevel radius (bump only)"), 5.0)
-  value_range (1.0, 8.0)
-  ui_range (1.0, 8.0)
+  value_range (1.0, 6.0)
+  ui_range (1.0, 6.0)
   ui_gamma (1.5)
   description    (_("Internal gaussian blur to inflate the bump bevel. This option does not work on chamfer"))
   ui_meta ("visible", "guichange {innerglowbevel}")
@@ -454,8 +472,8 @@ ui_meta ("visible", "guichange {imageoutlinebevel}")
 
 property_double (os_radius, _("Outline Bevel radius"), 3.0)
     description (_("Internal gaussian blur to inflate the outline bevel"))
-  value_range (1.0, 8.0)
-  ui_range (1.0, 8.0)
+  value_range (1.0, 6.0)
+  ui_range (1.0, 6.0)
   ui_gamma (1.5)
 ui_meta ("visible", "guichange {imageoutlinebevel}")
   ui_meta     ("sensitive", " enablespecialoutline")
@@ -531,7 +549,7 @@ typedef struct
   GeglNode *crop;
   GeglNode *thecoloroverlay;
   GeglNode *nopcolor;
-  GeglNode *opacitycolor;
+  GeglNode *coloropacity;
   GeglNode *nocolor;
   GeglNode *coloroverlaypolicy;
   GeglNode *beforecoloroverlaypolicy;
@@ -642,6 +660,11 @@ static void attach (GeglOperation *operation)
                                   "operation", "gegl:color",
                                   NULL);
 
+  GeglNode *coloropacity = gegl_node_new_child (gegl,
+                                  "operation", "gegl:opacity",
+                                  NULL);
+
+
 
   GeglNode *nopcolor = gegl_node_new_child (gegl,
                                   "operation", "gegl:nop",
@@ -675,9 +698,6 @@ static void attach (GeglOperation *operation)
                                   "operation", "gegl:color-overlay",
                                   NULL);
 
-  GeglNode *nopso   = gegl_node_new_child (gegl,
-                                  "operation", "gegl:nop",
-                                  NULL);
 
   GeglNode *behindso   = gegl_node_new_child (gegl,
                                   "operation", "gegl:dst-over",
@@ -731,6 +751,9 @@ static void attach (GeglOperation *operation)
                                   "operation", "gegl:levels",
                                   NULL);
 
+  GeglNode *nopso    = gegl_node_new_child (gegl,
+                                  "operation", "gegl:nop",
+                                  NULL);
 
     GeglNode *nopb3so = gegl_node_new_child (gegl,
                                   "operation", "gegl:nop",
@@ -831,6 +854,7 @@ static void attach (GeglOperation *operation)
                                          NULL);
  /*Nodes relating to Color Overlay*/
   gegl_operation_meta_redirect (operation, "color_fill", thecoloroverlay, "value");
+  gegl_operation_meta_redirect (operation, "color_opacity", coloropacity, "value");
   /*Nodes relating to Image File Overlay*/
   gegl_operation_meta_redirect (operation, "image_src",   image, "src");
   gegl_operation_meta_redirect (operation, "image_opacity",   image, "opacity");
@@ -880,7 +904,7 @@ static void attach (GeglOperation *operation)
   gegl_operation_meta_redirect (operation, "bevel_outhigh",   bevellighting, "out-high");
 
 /*These are the nodes that launch at startup but afterward the state-> nodes kick in.*/
-         gegl_node_link_many (input, nopimage, atopi, nopcolor, beforecoloroverlaypolicy, crop,  nopreplaceontop, replaceontop, nopig, innerglowblend, inputso, behindso, ds,  repairgeglgraph,  output, NULL);
+         gegl_node_link_many (input, nopcolor, beforecoloroverlaypolicy, crop,  nopimage, atopi,  nopreplaceontop, replaceontop, nopig, innerglowblend, inputso, behindso, ds,  repairgeglgraph,  output, NULL);
 /* All nodes relating to Outline here
     gegl_node_link_many (inputso, strokeso, blurso, moveso, colorso, atopso, idrefbevelblendmodeso, replaceontop2so, opacityso,  NULL);
     gegl_node_connect (behindso, "aux", opacityso, "output");
@@ -902,8 +926,8 @@ static void attach (GeglOperation *operation)
       gegl_node_connect (bevelblendmode, "aux", bevelalpha, "output");
       gegl_node_connect (replaceontop, "aux", bevelblendmode, "output"); */
  /*All nodes relating to color overlay here*/
-     gegl_node_link_many (nopcolor, coloroverlaypolicy, NULL);
-      gegl_node_connect (beforecoloroverlaypolicy, "aux", coloroverlaypolicy, "output");
+     gegl_node_link_many (nopcolor, coloroverlaypolicy, coloropacity, NULL);
+      gegl_node_connect (beforecoloroverlaypolicy, "aux", coloropacity, "output");
       gegl_node_connect (coloroverlaypolicy, "aux", thecoloroverlay, "output");
       gegl_node_connect (crop, "aux", input, "output");
 
@@ -963,9 +987,11 @@ static void attach (GeglOperation *operation)
   state->nothing7 = nothing7;
   state->coloroverlaypolicy = coloroverlaypolicy;
   state->nopcolor = nopcolor;
+  state->coloropacity = coloropacity;
 /*  state->thecoloroverlay = thecoloroverlay; */
 /*   state->repairgeglgraph = repairgeglgraph; */
   state->beforecoloroverlaypolicy = beforecoloroverlaypolicy;
+
 
 }
 
@@ -1024,8 +1050,12 @@ const char *blend_bevel = "gegl:nop";
   const char *blend_color = "gegl:nop";
   switch (o->color_policy) {
     case GEGL_BLEND_MODE_TYPE_NO_COLOR:  blend_color = "gegl:dst"; break;
-    case GEGL_BLEND_MODE_TYPE_MULTIPLY_COLOR:  blend_color = "gegl:multiply"; break;
     case GEGL_BLEND_MODE_TYPE_SOLID_COLOR:   blend_color = "gegl:src"; break;
+    case GEGL_BLEND_MODE_TYPE_MULTIPLY_COLOR:  blend_color = "gegl:multiply"; break;
+    case GEGL_BLEND_MODE_TYPE_HARDLIGHT_COLOR: blend_color = "gegl:hard-light"; break;
+    case GEGL_BLEND_MODE_TYPE_ADD_COLOR: blend_color = "gegl:add"; break;
+    case GEGL_BLEND_MODE_TYPE_LIGHTEN_COLOR: blend_color = "gegl:lighten"; break;
+    case GEGL_BLEND_MODE_TYPE_DARKEN_COLOR: blend_color = "gegl:darken"; break;
   }
   gegl_node_set (state->coloroverlaypolicy, "operation", blend_color, NULL);
 
@@ -1088,12 +1118,12 @@ I choose enable outline only because I had to choose one checkbox. */
  {                                                   /*Six GEGL graphs exist here and I did test with one GEGL Graph with more if (0->enable)'s and it was a ton slower.*/
   /* INNERGLOW + SPECIAL OUTLINE */
 
-         gegl_node_link_many (state->input, state->nopimage, state->atopi, state->nopcolor, state->beforecoloroverlaypolicy, state->crop,  state->nopreplaceontop, swapreplaceontop,  state->nopig, state->innerglowblend, state->inputso, state->behindso, /*state->ds state->repairgeglgraph,*/ state->output, NULL);
+         gegl_node_link_many (state->input,  state->nopcolor, state->beforecoloroverlaypolicy, state->crop, state->nopimage, state->atopi,  state->nopreplaceontop, swapreplaceontop,  state->nopig, state->innerglowblend, state->inputso, state->behindso, state->bevelalphaso, /*state->ds state->repairgeglgraph,*/ state->output, NULL);
 /* All nodes relating to Outline here*/
     gegl_node_link_many (state->inputso, state->strokeso, state->blurso, state->moveso, state->colorso, state->atopso, state->idrefbevelblendmodeso, swapreplaceontop2so, state->opacityso,  NULL);
     gegl_node_connect (state->behindso, "aux", state->opacityso, "output");
     gegl_node_connect (swapbevelblendmodeso, "aux", state->nopb3so, "output");
-    gegl_node_link_many (state->atopso, state->darkbeveloutline, swapbevelso, state->bevellightingso, state->bevelalphaso, state->nopb3so,  NULL);
+    gegl_node_link_many (state->atopso, state->darkbeveloutline, swapbevelso, state->bevellightingso,  state->nopb3so,  NULL);
     gegl_node_connect (state->atopso, "aux", swaplayerso, "output");
     gegl_node_link_many (state->nopso, swaplayerso,   NULL);
     gegl_node_connect (swapreplaceontop2so, "aux", swapbevelblendmodeso, "output");
@@ -1110,8 +1140,8 @@ I choose enable outline only because I had to choose one checkbox. */
       gegl_node_connect (state->bevelblendmode, "aux", swapbevelalpha, "output");
       gegl_node_connect (swapreplaceontop, "aux", state->bevelblendmode, "output");
  /*All nodes relating to color overlay here */
-      gegl_node_link_many (state->nopcolor, state->coloroverlaypolicy, NULL);
-      gegl_node_connect (state->beforecoloroverlaypolicy, "aux", state->coloroverlaypolicy, "output");
+      gegl_node_link_many (state->nopcolor, state->coloroverlaypolicy, state->coloropacity,  NULL);
+      gegl_node_connect (state->beforecoloroverlaypolicy, "aux", state->coloropacity, "output");
 /*      gegl_node_connect (state->coloroverlaypolicy, "aux", state->thecoloroverlay, "output"); */
       gegl_node_connect (state->crop, "aux", state->input, "output");
   }
@@ -1119,7 +1149,7 @@ I choose enable outline only because I had to choose one checkbox. */
   {
 
   /* INNERGLOW + NORMAL OUTLINE */
-         gegl_node_link_many (state->input, state->nopimage, state->atopi, state->nopcolor, state->beforecoloroverlaypolicy, state->crop,  state->nopreplaceontop, swapreplaceontop,  state->nopig, state->innerglowblend, state->inputso, state->behindso, /*state->ds state->repairgeglgraph,*/ state->output, NULL);
+         gegl_node_link_many (state->input, state->nopcolor, state->beforecoloroverlaypolicy, state->crop,  state->nopimage, state->atopi,  state->nopreplaceontop, swapreplaceontop,  state->nopig, state->innerglowblend, state->inputso, state->behindso, /*state->ds state->repairgeglgraph,*/ state->output, NULL);
 /* All nodes relating to Outline here*/
     gegl_node_link_many (state->inputso, state->strokeso, state->blurso, state->moveso, state->colorso, state->opacityso, NULL);
      gegl_node_connect (state->behindso, "aux", state->opacityso, "output");
@@ -1135,15 +1165,15 @@ I choose enable outline only because I had to choose one checkbox. */
       gegl_node_connect (state->bevelblendmode, "aux", swapbevelalpha, "output");
       gegl_node_connect (swapreplaceontop, "aux", state->bevelblendmode, "output");
 /* All nodes relating to color overlay here*/
-      gegl_node_link_many (state->nopcolor, state->coloroverlaypolicy, NULL);
-      gegl_node_connect (state->beforecoloroverlaypolicy, "aux", state->coloroverlaypolicy, "output");
+      gegl_node_link_many (state->nopcolor, state->coloroverlaypolicy, state->coloropacity, NULL);
+      gegl_node_connect (state->beforecoloroverlaypolicy, "aux", state->coloropacity, "output");
 /*      gegl_node_connect (state->coloroverlaypolicy, "aux", state->thecoloroverlay, "output"); */
       gegl_node_connect (state->crop, "aux", state->input, "output");
   }
   else
   {
  /*NO OUTLINE INNER GLOW */
-         gegl_node_link_many (state->input, state->nopimage, state->atopi, state->nopcolor, state->beforecoloroverlaypolicy, state->crop, state->nopreplaceontop, swapreplaceontop,  state->nopig, state->innerglowblend,  /*state->ds state->repairgeglgraph, */ state->output, NULL);
+         gegl_node_link_many (state->input, state->nopcolor, state->beforecoloroverlaypolicy, state->crop, state->nopimage, state->atopi,  state->nopreplaceontop, swapreplaceontop,  state->nopig, state->innerglowblend,  /*state->ds state->repairgeglgraph, */ state->output, NULL);
 /* All nodes relating to Inner Glow here*/
       gegl_node_link_many (state->nopig, state->innerglow, NULL);
       gegl_node_connect (state->innerglowblend, "aux", state->innerglow, "output");
@@ -1156,8 +1186,8 @@ I choose enable outline only because I had to choose one checkbox. */
       gegl_node_connect (state->bevelblendmode, "aux", swapbevelalpha, "output");
       gegl_node_connect (swapreplaceontop, "aux", state->bevelblendmode, "output");
 /* All nodes relating to color overlay here*/
-      gegl_node_link_many (state->nopcolor, state->coloroverlaypolicy, NULL);
-      gegl_node_connect (state->beforecoloroverlaypolicy, "aux", state->coloroverlaypolicy, "output");
+      gegl_node_link_many (state->nopcolor, state->coloroverlaypolicy, state->coloropacity,  NULL);
+      gegl_node_connect (state->beforecoloroverlaypolicy, "aux", state->coloropacity, "output");
 /*      gegl_node_connect (state->coloroverlaypolicy, "aux", state->thecoloroverlay, "output"); */
       gegl_node_connect (state->crop, "aux", state->input, "output");
     }
@@ -1167,12 +1197,12 @@ else
   if (o->enableoutline)
   if (o->enablespecialoutline)
   {
-         gegl_node_link_many (state->input, state->nopimage, state->atopi, state->nopcolor, state->beforecoloroverlaypolicy, state->crop, state->nopreplaceontop, swapreplaceontop, state->inputso, state->behindso, /*state->ds, state->repairgeglgraph, */ state->output, NULL);
+         gegl_node_link_many (state->input, state->nopcolor, state->beforecoloroverlaypolicy, state->crop, state->nopimage, state->atopi,  state->nopreplaceontop, swapreplaceontop, state->inputso, state->behindso,  state->bevelalphaso, /*state->ds, state->repairgeglgraph, */ state->output, NULL);
 /* All nodes relating to Outline here*/
     gegl_node_link_many (state->inputso, state->strokeso, state->blurso, state->moveso, state->colorso, state->atopso, state->idrefbevelblendmodeso, swapreplaceontop2so, state->opacityso,  NULL);
     gegl_node_connect (state->behindso, "aux", state->opacityso, "output");
     gegl_node_connect (swapbevelblendmodeso, "aux", state->nopb3so, "output");
-    gegl_node_link_many (state->atopso, state->darkbeveloutline, swapbevelso, state->bevellightingso,  state->bevelalphaso, state->nopb3so,  NULL);
+    gegl_node_link_many (state->atopso, state->darkbeveloutline, swapbevelso, state->bevellightingso,  state->nopb3so,  NULL);
     gegl_node_connect (state->atopso, "aux", swaplayerso, "output");
     gegl_node_link_many (state->nopso, swaplayerso, NULL);
     gegl_node_connect (swapreplaceontop2so, "aux", swapbevelblendmodeso, "output");
@@ -1186,8 +1216,8 @@ else
       gegl_node_connect (state->bevelblendmode, "aux", swapbevelalpha, "output");
       gegl_node_connect (swapreplaceontop, "aux", state->bevelblendmode, "output");
 /* All nodes relating to color overlay here*/
-      gegl_node_link_many (state->nopcolor, state->coloroverlaypolicy, NULL);
-      gegl_node_connect (state->beforecoloroverlaypolicy, "aux", state->coloroverlaypolicy, "output");
+      gegl_node_link_many (state->nopcolor, state->coloroverlaypolicy,  state->coloropacity,  NULL);
+      gegl_node_connect (state->beforecoloroverlaypolicy, "aux", state->coloropacity, "output");
 /*      gegl_node_connect (state->coloroverlaypolicy, "aux", state->thecoloroverlay, "output"); */
       gegl_node_connect (state->crop, "aux", state->input, "output");
 
@@ -1195,7 +1225,7 @@ else
   else
   {
  /*NORMAL OUTLINE*/
-         gegl_node_link_many (state->input, state->nopimage, state->atopi, state->nopcolor, state->beforecoloroverlaypolicy, state->crop, state->nopreplaceontop, swapreplaceontop, state->inputso, state->behindso, /*state->ds state->repairgeglgraph,*/ state->output, NULL);
+         gegl_node_link_many (state->input,  state->nopcolor, state->beforecoloroverlaypolicy, state->crop, state->nopimage, state->atopi, state->nopreplaceontop, swapreplaceontop, state->inputso, state->behindso, /*state->ds state->repairgeglgraph,*/ state->output, NULL);
 /* All nodes relating to Outline here*/
     gegl_node_link_many (state->inputso, state->strokeso, state->blurso, state->moveso, state->colorso, state->opacityso, NULL);
      gegl_node_connect (state->behindso, "aux", state->opacityso, "output");
@@ -1208,15 +1238,15 @@ else
       gegl_node_connect (state->bevelblendmode, "aux", swapbevelalpha, "output");
       gegl_node_connect (swapreplaceontop, "aux", state->bevelblendmode, "output");
 /* All nodes relating to color overlay here*/
-      gegl_node_link_many (state->nopcolor, state->coloroverlaypolicy, NULL);
-      gegl_node_connect (state->beforecoloroverlaypolicy, "aux", state->coloroverlaypolicy, "output");
+      gegl_node_link_many (state->nopcolor, state->coloroverlaypolicy, state->coloropacity, NULL);
+      gegl_node_connect (state->beforecoloroverlaypolicy, "aux", state->coloropacity, "output");
 /*      gegl_node_connect (state->coloroverlaypolicy, "aux", state->thecoloroverlay, "output"); */
       gegl_node_connect (state->crop, "aux", state->input, "output");
   }
   else
   {
  /*NO OUTLINE*/
-       gegl_node_link_many (state->input, state->nopimage, state->atopi, state->nopcolor, state->beforecoloroverlaypolicy, state->crop, state->nopreplaceontop, swapreplaceontop, /*state->ds, state->repairgeglgraph,*/ state->output, NULL);
+       gegl_node_link_many (state->input,  state->nopcolor, state->beforecoloroverlaypolicy, state->crop, state->nopimage, state->atopi, state->nopreplaceontop, swapreplaceontop, /*state->ds, state->repairgeglgraph,*/ state->output, NULL);
 /* All nodes relating to image file upload here*/
       gegl_node_link_many (state->nopimage, swapimage, state->imageadjustments, state->imageadjustments2, NULL);
       gegl_node_connect (state->atopi, "aux", state->imageadjustments2, "output");
@@ -1226,8 +1256,8 @@ else
       gegl_node_connect (state->bevelblendmode, "aux", swapbevelalpha, "output");
       gegl_node_connect (swapreplaceontop, "aux", state->bevelblendmode, "output");
 /* All nodes relating to color overlay here*/
-      gegl_node_link_many (state->nopcolor, state->coloroverlaypolicy, NULL);
-      gegl_node_connect (state->beforecoloroverlaypolicy, "aux", state->coloroverlaypolicy, "output");
+      gegl_node_link_many (state->nopcolor, state->coloroverlaypolicy, state->coloropacity,   NULL);
+      gegl_node_connect (state->beforecoloroverlaypolicy, "aux", state->coloropacity, "output");
 /*      gegl_node_connect (state->coloroverlaypolicy, "aux", state->thecoloroverlay, "output"); */
       gegl_node_connect (state->crop, "aux", state->input, "output");
   }
